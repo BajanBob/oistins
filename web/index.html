@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oistins · Link Monitor</title>
+<style>
+:root{
+  --bg:#070b12; --panel:#0d1420; --panel2:#111a29; --line:#1d2a3d; --ink:#d6e2f0; --dim:#7d8ea6;
+  --cyan:#33d6ff; --teal:#2ee6a6; --amber:#ffb020; --red:#ff3b4e; --blue:#5a8cff; --off:#3a4558;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{background:radial-gradient(1200px 600px at 70% -10%,#0f2238 0,transparent 60%),var(--bg);min-height:100vh}
+button{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--cyan)}
+button.hot{border-color:var(--amber);color:var(--amber);animation:pulse 1.4s infinite}
+.mono{font-family:var(--mono)}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);background:rgba(7,11,18,.85);position:sticky;top:0;z-index:20;backdrop-filter:blur(6px)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{width:34px;height:34px}
+.brand b{font-size:22px;letter-spacing:.32em;font-weight:800}
+.brand small{display:block;color:var(--dim);letter-spacing:.18em;font-size:10px;text-transform:uppercase}
+.strip{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--dim);font-size:12px;flex:1}
+.strip span b{color:var(--ink);font-weight:600}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+#alarmbar{display:none;align-items:center;gap:12px;padding:10px 18px;background:var(--red);color:#fff;font-weight:700;position:sticky;top:64px;z-index:19}
+#alarmbar.on{display:flex;animation:barflash .8s steps(2) infinite}
+#alarmbar.warn{background:var(--amber);color:#1b1200;animation:none}
+#alarmbar button{background:#fff;color:#000;border:0;font-weight:800}
+#alarmbar span{flex:1}
+main{padding:16px;display:grid;gap:14px;max-width:1500px;margin:0 auto}
+.gauges{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+.card h2{margin:0 0 10px;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:8px}
+.card h2 .sp{flex:1}
+.gauge{text-align:center}
+.gauge svg{width:100%;max-width:200px;height:auto}
+.gauge .lbl{font-size:11px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+.gauge .sub{font-size:11px;color:var(--dim)}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+.s4{grid-column:span 4}.s5{grid-column:span 5}.s6{grid-column:span 6}.s7{grid-column:span 7}.s8{grid-column:span 8}.s12{grid-column:span 12}
+@media (max-width:1100px){.s4,.s5,.s6,.s7,.s8{grid-column:span 12}}
+.lamps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.lamp{display:flex;gap:10px;align-items:flex-start;padding:9px;border-radius:10px;background:#0a111c;border:1px solid var(--line);cursor:default}
+.dot{width:14px;height:14px;border-radius:50%;flex:none;margin-top:2px;background:var(--off);box-shadow:0 0 0 2px #0006 inset}
+.ok .dot{background:var(--teal);box-shadow:0 0 10px var(--teal)}
+.warn .dot{background:var(--amber);box-shadow:0 0 12px var(--amber)}
+.crit .dot{background:var(--red);box-shadow:0 0 16px var(--red);animation:blink .6s steps(2) infinite}
+.pending .dot{background:var(--blue);animation:pulse 1.6s infinite}
+.lamp b{display:block;font-size:12px}
+.lamp small{display:block;color:var(--dim);font-size:11px;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.crit.lamp{border-color:var(--red)}.warn.lamp{border-color:#6b4a0c}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+td{padding:5px 6px;border-bottom:1px solid #131d2c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+tr.bad td{background:#3a0d14}
+.scroll{max-height:340px;overflow:auto}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.06em}
+.p-in{background:#3b1a20;color:#ff8a96}.p-out{background:#10283a;color:#7fd8ff}
+.p-crit{background:var(--red);color:#fff}.p-warn{background:var(--amber);color:#1b1200}.p-info{background:#22324a;color:#a9c1e0}
+.p-new{background:var(--amber);color:#1b1200}.p-exp{background:#3b1a20;color:#ff8a96}.p-loc{background:#17263a;color:#8fa6c4}
+.tabs{display:flex;gap:4px}
+.tabs button{padding:3px 10px;font-size:11px;border-radius:99px}
+.tabs button.on{border-color:var(--cyan);color:var(--cyan)}
+input.search{background:#0a111c;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:4px 8px;font-size:12px;width:140px}
+.alert{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;padding:9px 4px;border-bottom:1px solid #131d2c;align-items:start}
+.alert.acked{opacity:.45}
+.alert b{font-size:13px}.alert p{margin:2px 0 0;color:var(--dim);font-size:12px}
+.alert time{font-size:11px;color:var(--dim);white-space:nowrap}
+.route{margin-bottom:14px}
+.route .head{font-size:12px;color:var(--dim);margin-bottom:6px}
+.route .head b{color:var(--ink)}
+.hops{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.hop{background:#0a111c;border:1px solid var(--line);border-radius:8px;padding:4px 7px;font-size:11px;line-height:1.25}
+.hop.lost{opacity:.4}
+.hop i{color:var(--dim);font-style:normal}
+.arrow{color:var(--cyan);font-size:12px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}
+.kv dt{color:var(--dim)}.kv dd{margin:0;font-family:var(--mono);overflow-wrap:anywhere}
+.big{font:700 28px/1 var(--mono)}
+.counters{display:flex;gap:18px;margin-bottom:10px}
+.counters div{flex:1;background:#0a111c;border:1px solid var(--line);border-radius:10px;padding:10px}
+.counters small{color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+.empty{color:var(--dim);font-size:12px;padding:8px 2px}
+#flash{position:fixed;inset:0;pointer-events:none;z-index:50;border:0 solid transparent}
+#flash.crit{animation:redflash .9s infinite;border:10px solid var(--red)}
+#flash.warn{border:6px solid var(--amber);opacity:.7}
+.demo{background:var(--blue);color:#fff;font-size:10px;padding:2px 8px;border-radius:99px;letter-spacing:.14em}
+@keyframes blink{50%{opacity:.25}}
+@keyframes pulse{50%{opacity:.5}}
+@keyframes barflash{50%{background:#a3001a}}
+@keyframes redflash{0%,100%{background:rgba(255,0,30,.0)}50%{background:rgba(255,0,30,.22)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:3s!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="none" stroke="#33d6ff" stroke-width="2"/>
+      <path d="M6 24c4-4 8-4 12 0s8 4 12 0 6-3 6-3" fill="none" stroke="#2ee6a6" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M20 4v8M20 28v8" stroke="#33d6ff" stroke-width="2" opacity=".6"/><circle cx="20" cy="15" r="2.5" fill="#33d6ff"/></svg>
+    <div><b>OISTINS</b><small>Internet link monitor</small></div>
+  </div>
+  <div class="strip" id="strip"></div>
+  <div class="actions">
+    <button id="arm" class="hot" title="Browsers only allow sound after a click">🔈 Arm alarm sound</button>
+    <button id="speedBtn">Speed test</button>
+    <button id="traceBtn">Re-trace</button>
+    <button id="ackAll">Acknowledge all</button>
+  </div>
+</header>
+<div id="alarmbar"><span id="alarmtext"></span><button id="alarmAck">ACKNOWLEDGE</button></div>
+
+<main>
+  <section class="gauges" id="gauges"></section>
+
+  <section class="grid">
+    <div class="card s7"><h2>Threat lamps<span class="sp"></span><button id="recheck" style="padding:2px 10px;font-size:11px">Re-check</button></h2><div class="lamps" id="lamps"></div></div>
+    <div class="card s5"><h2>Alerts &amp; warnings<span class="sp"></span><span id="alertCount"></span></h2><div class="scroll" id="alerts"></div></div>
+
+    <div class="card s8"><h2>Traffic to and from your IP<span class="sp"></span>
+      <input class="search" id="q" placeholder="Filter IP, country, app">
+      <div class="tabs" id="dirTabs"><button data-d="all" class="on">All</button><button data-d="in">Incoming</button><button data-d="out">Outgoing</button></div></h2>
+      <div class="scroll"><table><thead><tr><th></th><th>Remote IP</th><th>Country</th><th>Network owner</th><th>Ports</th><th>App</th><th>State</th></tr></thead><tbody id="conns"></tbody></table></div>
+    </div>
+    <div class="card s4"><h2>Throughput (last 2 min)</h2><svg id="spark" viewBox="0 0 300 120" style="width:100%;height:140px"></svg>
+      <div style="font-size:11px;color:var(--dim)"><span style="color:var(--cyan)">■</span> incoming &nbsp; <span style="color:var(--amber)">■</span> outgoing</div>
+      <h2 style="margin-top:14px">Your link</h2><dl class="kv" id="netinfo"></dl>
+    </div>
+
+    <div class="card s7"><h2>Internet paths &amp; routing</h2><div id="routes"></div></div>
+    <div class="card s5"><h2>Open ports on this computer</h2>
+      <div class="scroll"><table><thead><tr><th>Port</th><th>Address</th><th>App</th><th>Exposure</th><th></th></tr></thead><tbody id="ports"></tbody></table></div>
+    </div>
+
+    <div class="card s12"><h2>Scans &amp; pings (last minute)</h2>
+      <div class="counters"><div><small>Pings received</small><div class="big" id="pings">–</div></div>
+      <div><small>Connection probes</small><div class="big" id="syns">–</div></div>
+      <div><small>Countries talking to you</small><div class="big" id="ccount">–</div></div>
+      <div><small>Incoming / outgoing</small><div class="big" id="inout">–</div></div></div>
+      <div class="empty" id="sniffnote"></div>
+    </div>
+  </section>
+</main>
+<div id="flash"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const flag = cc => !cc ? "" : cc === "LAN" ? "🏠" : /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map(c => 0x1F1A5 + c.charCodeAt(0))) : "🏳️";
+const ago = t => { if (!t) return "never"; const s = Math.max(0, Date.now()/1000 - t);
+  return s < 60 ? Math.round(s)+"s ago" : s < 3600 ? Math.round(s/60)+"m ago" : Math.round(s/3600)+"h ago"; };
+const api = (path, body) => fetch(path, {method:"POST", headers:{"X-Oistins":"1","Content-Type":"application/json"}, body:JSON.stringify(body||{})});
+
+/* ---------- gauges ---------- */
+const NICE = [1,2,5,10,20,50,100,200,300,500,1000,2000];
+const niceMax = (v, min) => NICE.find(n => n >= Math.max(min, v * 1.15)) || 5000;
+const P = (r, deg) => { const a = (deg - 90) * Math.PI / 180; return [100 + r*Math.cos(a), 100 + r*Math.sin(a)]; };
+const arc = (r, a0, a1) => { const [x0,y0] = P(r,a0), [x1,y1] = P(r,a1); return `M${x0} ${y0} A${r} ${r} 0 ${a1-a0>180?1:0} 1 ${x1} ${y1}`; };
+const GAUGES = [
+  {id:"down", label:"Download", unit:"Mbps", min:10},
+  {id:"up", label:"Upload", unit:"Mbps", min:5},
+  {id:"lat", label:"Latency", unit:"ms", min:300, fixed:true, invert:true},
+  {id:"rx", label:"Live in", unit:"Mbps", min:5},
+  {id:"tx", label:"Live out", unit:"Mbps", min:2},
+];
+function buildGauges() {
+  $("#gauges").innerHTML = GAUGES.map(g => {
+    let ticks = "";
+    for (let i = 0; i <= 10; i++) { const a = -120 + i*24, [x0,y0] = P(78,a), [x1,y1] = P(i%5?72:66,a);
+      ticks += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#4a5b74" stroke-width="${i%5?1.5:2.5}"/>`; }
+    const zones = g.invert ? `<path d="${arc(84,-120,-24)}" stroke="#2ee6a655" stroke-width="5" fill="none"/>
+      <path d="${arc(84,-24,48)}" stroke="#ffb02066" stroke-width="5" fill="none"/><path d="${arc(84,48,120)}" stroke="#ff3b4e77" stroke-width="5" fill="none"/>` : "";
+    return `<div class="card gauge"><svg viewBox="0 20 200 160">
+      <path d="${arc(84,-120,120)}" stroke="#16212f" stroke-width="10" fill="none" stroke-linecap="round"/>${zones}
+      <path id="g-${g.id}-arc" d="" stroke="${g.invert?"#2ee6a6":"#33d6ff"}" stroke-width="10" fill="none" stroke-linecap="round"/>
+      ${ticks}<text id="g-${g.id}-max" x="168" y="172" fill="#5d6e86" font-size="10" text-anchor="end"></text>
+      <text x="32" y="172" fill="#5d6e86" font-size="10">0</text>
+      <g id="g-${g.id}-needle" style="transition:transform .6s cubic-bezier(.3,1.4,.5,1);transform-origin:100px 100px">
+        <line x1="100" y1="108" x2="100" y2="34" stroke="#ff6a3d" stroke-width="3" stroke-linecap="round"/></g>
+      <circle cx="100" cy="100" r="7" fill="#0d1420" stroke="#ff6a3d" stroke-width="2"/>
+      <text id="g-${g.id}-val" x="100" y="146" fill="#e8f2ff" font-size="26" font-weight="700" text-anchor="middle" font-family="ui-monospace,Consolas,monospace">–</text>
+      <text x="100" y="162" fill="#7d8ea6" font-size="10" text-anchor="middle" letter-spacing="2">${g.unit.toUpperCase()}</text></svg>
+      <div class="lbl">${g.label}</div><div class="sub" id="g-${g.id}-sub">&nbsp;</div></div>`;
+  }).join("");
+}
+const gmax = {};
+function setGauge(id, v, sub) {
+  const g = GAUGES.find(x => x.id === id);
+  let max = g.min;
+  if (!g.fixed) {  // auto-range, but don't let the scale jump around every second
+    const want = niceMax(v || 0, g.min);
+    max = gmax[id] = (!gmax[id] || want > gmax[id] || (v || 0) < gmax[id] * 0.25) ? want : gmax[id];
+  }
+  const frac = v == null ? 0 : Math.min(1, v / max), a = -120 + 240*frac;
+  $(`#g-${id}-needle`).style.transform = `rotate(${a}deg)`;
+  $(`#g-${id}-arc`).setAttribute("d", frac > 0.003 ? arc(84, -120, a) : "");
+  if (g.invert) $(`#g-${id}-arc`).setAttribute("stroke", frac < .4 ? "#2ee6a6" : frac < .7 ? "#ffb020" : "#ff3b4e");
+  $(`#g-${id}-val`).textContent = v == null ? "–" : v >= 100 ? Math.round(v) : (+v).toFixed(1);
+  $(`#g-${id}-max`).textContent = max;
+  if (sub !== undefined) $(`#g-${id}-sub`).innerHTML = sub || "&nbsp;";
+}
+
+/* ---------- sound & alarms ---------- */
+let actx = null, lastSiren = 0;
+const seen = new Set(); let firstLoad = true;
+function tone(f0, f1, t0, dur, type="sawtooth", vol=.13) {
+  const o = actx.createOscillator(), g = actx.createGain(); o.type = type;
+  o.frequency.setValueAtTime(f0, t0); o.frequency.linearRampToValueAtTime(f1, t0 + dur);
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + .02); g.gain.setValueAtTime(vol, t0 + dur - .03); g.gain.linearRampToValueAtTime(0, t0 + dur);
+  o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + dur);
+}
+const siren = () => { if (!actx) return; const t = actx.currentTime; for (let i = 0; i < 4; i++) { tone(620,1350,t+i*.5,.25); tone(1350,620,t+i*.5+.25,.25); } };
+const beep = () => { if (!actx) return; const t = actx.currentTime; tone(880,880,t,.14,"square",.08); tone(880,880,t+.22,.14,"square",.08); };
+$("#arm").onclick = async () => {
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)(); await actx.resume();
+  $("#arm").classList.remove("hot"); $("#arm").textContent = "🔊 Alarm sound armed"; beep();
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+};
+function notify(a) { try { if ("Notification" in window && Notification.permission === "granted" && document.hidden)
+  new Notification("Oistins: " + a.title, {body: a.detail, requireInteraction: a.level === "crit"}); } catch (e) {} }
+
+/* ---------- render ---------- */
+const LAMP_NAMES = {arp:"Router / ARP spoofing", tls:"Encryption (MITM)", dns:"DNS tampering", injection:"Traffic injection",
+  ports:"New port openings", vuln:"Vulnerable ports", routing:"Routing & diversions", intrusion:"Scans & intrusions", cellular:"Fake cell towers"};
+let dirFilter = "all";
+document.querySelectorAll("#dirTabs button").forEach(b => b.onclick = () => {
+  dirFilter = b.dataset.d; document.querySelectorAll("#dirTabs button").forEach(x => x.classList.toggle("on", x === b)); render(last); });
+$("#q").oninput = () => render(last);
+let last = null;
+
+function render(s) {
+  if (!s) return;
+  const n = s.network || {}, pg = n.public_geo || {}, sp = s.speed || {};
+  $("#strip").innerHTML = [
+    s.demo ? `<span class="demo">DEMO DATA</span>` : "",
+    `<span>Public IP <b class="mono">${esc(n.public_ip || "…")}</b> ${flag(pg.cc)} ${esc(pg.org || "")}</span>`,
+    `<span>Router <b class="mono">${esc(n.gateway || "–")}</b></span>`,
+    `<span>Link <b>${esc(n.iface || "–")}</b></span>`,
+    `<span>${s.quiet_hours ? "<b style='color:var(--amber)'>QUIET HOURS</b> watch" : "Clock"} <b class="mono">${new Date().toLocaleTimeString()}</b></span>`,
+  ].join("");
+
+  setGauge("down", sp.download, sp.running ? "testing…" : sp.at ? "tested " + ago(sp.at) : "");
+  setGauge("up", sp.upload, sp.at && !sp.running ? (sp.loss ? sp.loss + "% loss" : "") : "");
+  setGauge("lat", sp.latency, sp.jitter != null ? `jitter ${sp.jitter} ms` : "");
+  setGauge("rx", s.throughput?.rx, "right now");
+  setGauge("tx", s.throughput?.tx, "right now");
+
+  $("#lamps").innerHTML = Object.entries(LAMP_NAMES).map(([k, name]) => {
+    const c = s.checks?.[k] || {status:"pending", detail:""};
+    return `<div class="lamp ${esc(c.status)}" title="${esc(c.detail)}"><span class="dot"></span><div><b>${name}</b><small>${esc(c.detail)}</small></div></div>`;
+  }).join("");
+
+  // alerts
+  const open = s.alerts.filter(a => !a.acked);
+  $("#alertCount").innerHTML = open.length ? `<span class="pill p-${open.some(a=>a.level==="crit")?"crit":"warn"}">${open.length} OPEN</span>` : `<span class="pill p-info">ALL CLEAR</span>`;
+  $("#alerts").innerHTML = s.alerts.length ? s.alerts.slice(0, 80).map(a => `
+    <div class="alert ${a.acked ? "acked" : ""}"><span class="pill p-${a.level}">${a.level === "crit" ? "CRITICAL" : a.level === "warn" ? "WARNING" : "INFO"}</span>
+      <div><b>${esc(a.title)}</b>${a.count > 1 ? ` <span class="pill p-info">×${a.count}</span>` : ""}<p>${esc(a.detail)}</p></div>
+      <div style="text-align:right"><time>${ago(a.last)}</time><br>${a.acked ? "" : `<button data-ack="${esc(a.key)}" style="padding:2px 8px;font-size:11px;margin-top:4px">Ack</button>`}</div></div>`).join("")
+    : `<div class="empty">No alerts. Oistins is learning what's normal for this network.</div>`;
+
+  // connections
+  const q = $("#q").value.trim().toLowerCase();
+  const rows = s.connections.filter(c => (dirFilter === "all" || c.dir === dirFilter) &&
+    (!q || [c.ip, c.country, c.org, c.proc, c.cc].join(" ").toLowerCase().includes(q)));
+  $("#conns").innerHTML = rows.length ? rows.slice(0, 300).map(c => `
+    <tr class="${c.dir === "in" && c.risk && c.public ? "bad" : ""}">
+      <td><span class="pill p-${c.dir}">${c.dir === "in" ? "⬇ IN" : "⬆ OUT"}</span></td>
+      <td class="mono">${esc(c.ip)}</td><td>${flag(c.cc)} ${esc(c.country || (c.public ? "…" : ""))}</td>
+      <td>${esc(c.org)}</td><td class="mono">${c.lport}→${c.rport}${c.risk ? ` <span class="pill p-exp">${esc(c.risk)}</span>` : ""}</td>
+      <td>${esc(c.proc)}</td><td>${esc(c.status)}</td></tr>`).join("")
+    : `<tr><td colspan="7" class="empty">No matching connections.</td></tr>`;
+
+  // ports
+  $("#ports").innerHTML = s.listening.map(p => `
+    <tr class="${p.exposed && p.risk && !p.trusted ? "bad" : ""}"><td class="mono">${esc(p.proto)} ${p.port}</td><td class="mono">${esc(p.ip)}</td><td>${esc(p.proc)}</td>
+      <td>${p.exposed ? `<span class="pill p-exp">NETWORK</span>` : `<span class="pill p-loc">LOCAL</span>`}
+        ${p.new && !p.trusted ? `<span class="pill p-new">NEW</span>` : ""}${p.risk ? ` <small style="color:var(--amber)">${esc(p.risk)}</small>` : ""}</td>
+      <td>${p.exposed && !p.trusted ? `<button data-trust="${p.port}" style="padding:2px 8px;font-size:11px">Trust</button>` : p.trusted ? "✓" : ""}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty">No open ports found.</td></tr>`;
+
+  // routes
+  const routes = Object.entries(s.routes || {});
+  $("#routes").innerHTML = routes.length ? routes.map(([t, r]) => {
+    const ccs = [...new Set(r.hops.map(h => h.cc).filter(c => c && c !== "LAN"))];
+    return `<div class="route"><div class="head">Your computer → <b class="mono">${esc(t)}</b> · ${r.hops.length} hops · traced ${ago(r.at)} · via ${ccs.map(c => flag(c) + " " + esc(c)).join(" ") || "…"}</div>
+      <div class="hops">${r.hops.map((h, i) => `${i ? '<span class="arrow">›</span>' : ""}<div class="hop ${h.ip ? "" : "lost"}" title="${esc(h.org)}">
+        <i>${h.ttl}</i> ${h.ip ? `<span class="mono">${esc(h.ip)}</span><br>${flag(h.cc)} ${esc(h.cc === "LAN" ? "LAN" : h.cc)} ${h.rtt != null ? `<i>${h.rtt} ms</i>` : ""}` : "<i>* no reply</i>"}</div>`).join("")}</div></div>`;
+  }).join("") : `<div class="empty">Tracing routes… (runs every few minutes)</div>`;
+
+  // network info
+  $("#netinfo").innerHTML = [["Public IP", `${n.public_ip || "…"} ${flag(pg.cc)}`], ["Provider", pg.org || "…"], ["Country", pg.country || "…"],
+    ["Router", `${n.gateway || "–"}`], ["Router MAC", n.gateway_mac || "–"],
+    ["Interfaces", (n.interfaces || []).map(i => `${i.name} (${i.kind}) ${i.ipv4.join(", ")}`).join("; ") || "–"]]
+    .map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
+
+  // sparkline
+  const h = s.history || [], m = Math.max(1, ...h.map(x => Math.max(x[0], x[1])));
+  const line = i => h.map((p, j) => `${(j / Math.max(1, h.length - 1)) * 300},${115 - (p[i] / m) * 105}`).join(" ");
+  $("#spark").innerHTML = `<line x1="0" y1="115" x2="300" y2="115" stroke="#1d2a3d"/><text x="2" y="12" fill="#5d6e86" font-size="10">${m.toFixed(1)} Mbps</text>
+    <polyline points="${line(0)}" fill="none" stroke="#33d6ff" stroke-width="2"/><polyline points="${line(1)}" fill="none" stroke="#ffb020" stroke-width="2"/>`;
+
+  // counters
+  const sn = s.sniffer || {};
+  $("#pings").textContent = sn.status === "ok" ? sn.pings_per_min : "–";
+  $("#syns").textContent = sn.status === "ok" ? sn.syns_per_min : "–";
+  $("#ccount").textContent = s.counts.countries;
+  $("#inout").textContent = `${s.counts.in} / ${s.counts.out}`;
+  $("#sniffnote").textContent = sn.status === "ok" ? "Live packet watch active." : sn.detail || "";
+
+  // alarm state
+  const alarm = s.alarm, top = open.find(a => a.level === "crit") || open.find(a => a.level === "warn");
+  $("#flash").className = alarm || "";
+  const bar = $("#alarmbar");
+  bar.className = alarm ? "on" + (alarm === "warn" ? " warn" : "") : "";
+  $("#alarmtext").textContent = top ? `⚠ ${alarm === "crit" ? "CRITICAL" : "WARNING"}: ${top.title}` + (open.length > 1 ? `  (+${open.length - 1} more)` : "") : "";
+  document.title = alarm === "crit" ? "🔴 ALERT · Oistins" : alarm === "warn" ? "🟠 Oistins" : "Oistins · Link Monitor";
+  for (const a of s.alerts) {
+    if (seen.has(a.key + a.level)) continue;
+    seen.add(a.key + a.level);
+    if (!firstLoad && !a.acked) { if (a.level === "warn") beep(); notify(a); }
+  }
+  firstLoad = false;
+  if (alarm === "crit" && actx && Date.now() - lastSiren > 4000) { lastSiren = Date.now(); siren(); }
+}
+
+document.addEventListener("click", e => {
+  const ack = e.target.closest("[data-ack]"), trust = e.target.closest("[data-trust]");
+  if (ack) api("/api/ack", {key: ack.dataset.ack}).then(poll);
+  if (trust) api("/api/trust", {port: +trust.dataset.trust}).then(poll);
+});
+$("#ackAll").onclick = $("#alarmAck").onclick = () => api("/api/ack", {}).then(poll);
+$("#speedBtn").onclick = () => api("/api/speedtest").then(poll);
+$("#traceBtn").onclick = () => api("/api/retrace").then(poll);
+$("#recheck").onclick = () => api("/api/recheck").then(poll);
+
+async function poll() {
+  try { const r = await fetch("/api/state", {cache: "no-store"}); last = await r.json(); render(last); }
+  catch (e) { $("#strip").innerHTML = `<span style="color:var(--red)"><b>Oistins engine not reachable. Is it still running?</b></span>`; }
+}
+buildGauges(); poll(); setInterval(poll, 1500);
+</script>
+</body>
+</html>
