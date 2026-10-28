@@ -1,0 +1,4 @@
+psutil>=5.9
+# Optional:
+#   scapy        packet watch for pings and port scans (run as admin; Npcap on Windows)
+#   maxminddb    offline country lookups from a .mmdb file
