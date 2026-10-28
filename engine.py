@@ -94,6 +94,8 @@ class Engine:
         trusted = set(self.cfg["trusted_ports"])
         quiet = self.quiet_hours()
         nb = self.nb()
+        routine = [p for p in listening if p["routine"]]
+        listening = [p for p in listening if not p["routine"]]
         keys = sorted({f"{p['proto']}/{p['port']}" for p in listening})
         if "ports" not in nb:  # first run on this network: learn what's normal
             nb["ports"] = keys
@@ -128,7 +130,8 @@ class Engine:
         exposed = sum(p["exposed"] for p in listening)
         self.set_check("ports", "crit" if new_exposed and quiet else "warn" if new_exposed else "ok",
                        f"{len(listening)} open ({exposed} reachable from network), "
-                       f"{new_exposed} new since baseline.")
+                       f"{new_exposed} new since baseline"
+                       + (f"; {len(routine)} routine browser/Windows UDP ignored." if routine else "."))
         self.set_check("vuln", "warn" if vulns else "ok",
                        ", ".join(f"{p['risk']} :{p['port']}" for p in vulns) or "No risky services exposed.")
 
@@ -210,18 +213,30 @@ class Engine:
     def _check_tls(self, nb) -> None:
         res = [checks.tls_check(h) for h in checks.TLS_HOSTS]
         seen = nb.setdefault("tls", {})
-        bad, inspect, changed, reached = [], [], [], 0
+        bad, inspect, changed, local, reached = [], [], [], [], 0
         for r in res:
             if r["verified"] is None:
                 continue
             reached += 1
             if r["verified"] is False:
-                bad.append(f"{r['host']}: {r['error']}")
+                cause = r.get("cause")
+                until = f", valid until {r['not_after']}" if r.get("not_after") else ""
+                if cause == "local_trust":
+                    local.append(f"{r['host']}: {r['error']}, but the site's certificate is genuine "
+                                 f"({r['issuer']}{until})")
+                elif cause == "site_expired":
+                    local.append(f"{r['host']}: the site's own {r['issuer']} certificate expired "
+                                 f"({r['not_after']})")
+                elif cause == "intercepted":
+                    bad.append(f"{r['host']}: {r['error']}; certificate issued by {r['issuer']}"
+                               f"{until}, not a public authority")
+                else:
+                    bad.append(f"{r['host']}: {r['error']}")
             elif r["kind"] == "interceptor":
                 inspect.append(f"{r['host']} by {r['issuer']}")
             elif r["kind"] == "unknown":
                 inspect.append(f"{r['host']} by unknown issuer {r['issuer']}")
-            if r.get("issuer"):
+            if r["verified"] and r.get("issuer"):
                 prev = seen.setdefault(r["host"], r["issuer"])
                 if prev != r["issuer"] and r["kind"] != "public":
                     changed.append(f"{r['host']}: {prev} → {r['issuer']}")
@@ -230,7 +245,14 @@ class Engine:
             self.alerts.raise_("tls:bad", "crit", "MITM", "Untrusted security certificates",
                                "; ".join(bad) + ". Something may be intercepting encrypted traffic.")
             self.set_check("tls", "crit", "; ".join(bad))
-        elif inspect or changed:
+        elif local and not (inspect or changed):
+            self.alerts.raise_("tls:local", "warn", "MITM", "Certificate check failed, probably not an attack",
+                               "; ".join(local) + ". Your computer's list of trusted certificates may be "
+                               "out of date: run Windows Update (including optional updates). If the site "
+                               "also shows a warning in your browser, treat it as interception.")
+            self.set_check("tls", "warn", "; ".join(local))
+        elif inspect or changed or local:
+            inspect += local
             self.alerts.raise_("tls:inspect", "warn", "MITM", "Encrypted traffic is being inspected",
                                "; ".join(inspect + changed) + ". Often antivirus or a work network; "
                                "if not, treat as man-in-the-middle.")

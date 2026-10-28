@@ -57,6 +57,25 @@ def _raw_connections():
         return out
 
 
+# Programs that open short-lived UDP ports all the time (web QUIC, video calls, device
+# discovery, DNS). New UDP ports from these are routine and don't raise warnings.
+ROUTINE_UDP_PROCS = {
+    "brave", "chrome", "msedge", "msedgewebview2", "firefox", "opera", "opera_gx", "vivaldi",
+    "iexplore", "safari", "svchost", "lsass", "dashost", "searchhost", "spoolsv", "system",
+    "teams", "ms-teams", "zoom", "skype", "discord", "slack", "whatsapp", "telegram", "signal",
+    "spotify", "steam", "steamwebhelper", "onedrive", "dropbox", "googledrivefs", "nvcontainer",
+    "airplayuihelper", "mdnsresponder", "systemd-resolved", "avahi-daemon", "chronyd",
+    "dhclient", "networkmanager", "rapportd", "sharingd", "identityservicesd"}
+
+
+def _routine_udp(proto: str, port: int, proc: str) -> bool:
+    """A UDP listener that is normal background activity, not a new service."""
+    if proto != "UDP" or port in RISKY_PORTS:
+        return False
+    name = (proc or "").lower().removesuffix(".exe")
+    return name in ROUTINE_UDP_PROCS or port >= 49152  # 49152+ = Windows/IANA temporary ports
+
+
 def connections(geo) -> tuple[list[dict], list[dict]]:
     """(active connections, listening ports)."""
     raw = _raw_connections()
@@ -69,7 +88,8 @@ def connections(geo) -> tuple[list[dict], list[dict]]:
             exposed = not (ip.startswith("127.") or ip in ("::1", "localhost"))
             listening[(proto, ip, port)] = {
                 "proto": proto, "ip": ip, "port": port, "pid": pid, "proc": _pname(pid),
-                "exposed": exposed, "risk": RISKY_PORTS.get(port)}
+                "exposed": exposed, "risk": RISKY_PORTS.get(port),
+                "routine": _routine_udp(proto, port, _pname(pid))}
             if proto == "TCP":
                 tcp_listen.add(port)
     conns = []
@@ -142,9 +162,53 @@ def tls_check(host: str) -> dict:
                 else "public" if any(k in low for k in PUBLIC_CAS) else "unknown")
         return {"host": host, "verified": True, "issuer": org, "kind": kind}
     except ssl.SSLCertVerificationError as e:
-        return {"host": host, "verified": False, "error": e.verify_message or str(e)}
+        r = {"host": host, "verified": False, "error": e.verify_message or str(e)}
+        r.update(_diagnose_cert(host))
+        return r
     except OSError as e:
         return {"host": host, "verified": None, "error": str(e)}
+
+
+def _cert_details(der: bytes) -> dict:
+    """Issuer and dates of a certificate, using only the standard library."""
+    import tempfile
+    pem = ssl.DER_cert_to_PEM_cert(der)
+    fd, path = tempfile.mkstemp(suffix=".pem")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(pem)
+        info = ssl._ssl._test_decode_cert(path)  # noqa: SLF001 - stdlib, no extra dependency
+    finally:
+        os.unlink(path)
+    issuer = dict(x[0] for x in info.get("issuer", ()))
+    return {"issuer": issuer.get("organizationName") or issuer.get("commonName") or "?",
+            "not_after": info.get("notAfter", ""),
+            "expires": ssl.cert_time_to_seconds(info["notAfter"]) if info.get("notAfter") else None}
+
+
+def _diagnose_cert(host: str) -> dict:
+    """After a failed check: look at the certificate anyway, to tell a real interception
+    apart from an out-of-date trust list on this computer."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection((host, 443), timeout=8) as s:
+            with ctx.wrap_socket(s, server_hostname=host) as t:
+                d = _cert_details(t.getpeercert(binary_form=True))
+    except Exception:  # noqa: BLE001
+        return {"cause": "unknown"}
+    low = d["issuer"].lower()
+    d["kind"] = ("interceptor" if any(k in low for k in INTERCEPTORS)
+                 else "public" if any(k in low for k in PUBLIC_CAS) else "unknown")
+    still_valid = d["expires"] is not None and d["expires"] > time.time()
+    if d["kind"] != "public":
+        d["cause"] = "intercepted"   # someone else's certificate: treat as man-in-the-middle
+    elif still_valid:
+        d["cause"] = "local_trust"   # genuine, in-date certificate; this PC's trust list is stale
+    else:
+        d["cause"] = "site_expired"  # the website itself let its certificate lapse
+    return d
 
 
 # ---------------------------------------------------------------- DNS
