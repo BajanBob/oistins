@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the system's built-in certificate authorities are trusted (not user-installed ones),
+     so an interception certificate shows up as a failed check instead of being accepted.
+     Plain HTTP is allowed only for the country lookup and the injection test pages. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">ip-api.com</domain>
+        <domain includeSubdomains="false">connectivitycheck.gstatic.com</domain>
+        <domain includeSubdomains="false">detectportal.firefox.com</domain>
+    </domain-config>
+</network-security-config>
